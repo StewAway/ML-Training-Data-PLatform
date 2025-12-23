@@ -5,7 +5,6 @@ from kafka import KafkaProducer, KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 from kafka.errors import UnknownTopicOrPartitionError, KafkaError
 
-
 @dataclass
 class UserEvent:
     user_id: int

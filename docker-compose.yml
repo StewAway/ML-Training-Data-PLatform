@@ -1,112 +1,66 @@
 services:
   # -------------------------
-  # 1) ZooKeeper (Kafka metadata)
-  # -------------------------
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    container_name: zookeeper
-    environment:
-      ZOOKEEPER_CLIENT_PORT: "2181"
-      ZOOKEEPER_TICK_TIME: "2000"
-
-  # -------------------------
-  # 2) Kafka broker
-  #
-  # Connections:
-  # - Inside Docker network: other containers use "kafka:9092"
-  # - From your host machine: use "localhost:9092"
-  #
-  # Port mapping:
-  # - host 9092  ---> container 29092  (the HOST listener)
-  # - container 9092 is for internal Docker traffic (producer/consumer containers)
+  # 1) Kafka (KRaft Mode)
+  # Using your custom Dockerfile
   # -------------------------
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    build: .
     container_name: kafka
-    depends_on:
-      - zookeeper
     ports:
-      - "9092:29092"  # host -> kafka host-listener
-    environment:
-      KAFKA_BROKER_ID: "1"
-      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-
-      # Two listeners:
-      # - PLAINTEXT: for containers (kafka:9092)
-      # - PLAINTEXT_HOST: for your laptop (localhost:9092)
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-
+      - "9092:9092"
+    command: >
+      sh -c "cd /kafka_2.12-3.6.2 && 
+      if [ ! -f /tmp/kraft-combined-logs/meta.properties ]; then
+        bin/kafka-storage.sh format -t $$KAFKA_CLUSTER_ID -c config/kraft/server.properties;
+      fi;
+      bin/kafka-server-start.sh config/kraft/server.properties 
+      --override process.roles=broker,controller 
+      --override node.id=1 
+      --override controller.quorum.voters=1@kafka:9093 
+      --override listeners=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093 
+      --override advertised.listeners=PLAINTEXT://kafka:9092 
+      --override listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT 
+      --override controller.listener.names=CONTROLLER"
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
-      interval: 5s
+      test: ["CMD-SHELL", "lsof -i :9092 || exit 1"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 5
 
   # -------------------------
-  # 3) Producer (your script)
-  #
-  # Runs on-demand:
-  #   docker compose run --rm producer
-  #
+  # 2) Producer
   # -------------------------
   producer:
-    image: python:3.11-slim
+    build: .
     container_name: producer
     depends_on:
       kafka:
         condition: service_healthy
-    working_dir: /app
     volumes:
       - ./ingestion:/app
-    entrypoint: ["/bin/bash", "-lc"]
+    working_dir: /app
     environment:
       PRODUCER_ARGS: "--num-events 50 --sleep-time 0.1 --seed 42"
       TOPIC: "user_events"
     command: >
-      '
-      pip -q install kafka-python >/dev/null &&
-      python producer.py
+      python3 event_generator.py
         --bootstrap-server kafka:9092
         --topic ${TOPIC}
         ${PRODUCER_ARGS}
-      '
 
   # -------------------------
-  # 4) Consumer (Kafka console consumer)
-  #
-  # Runs on-demand:
-  #   docker compose run --rm consumer
-  #
-  # Useful to visually verify events are arriving.
+  # 3) Consumer (Built-in Kafka Tool)
   # -------------------------
   consumer:
-    image: confluentinc/cp-kafka:7.5.0
+    build: .
     container_name: consumer
     depends_on:
       kafka:
         condition: service_healthy
-    entrypoint: ["/bin/bash", "-lc"]
-    environment:
-      TOPIC: "user_events"
-      FROM_BEGINNING: "false"
     command: >
-      '
-      if [ "${FROM_BEGINNING}" = "true" ]; then
-        FROM="--from-beginning";
-      else
-        FROM="";
-      fi;
-
-      kafka-console-consumer.sh
+      /kafka_2.12-3.6.2/bin/kafka-console-consumer.sh
         --bootstrap-server kafka:9092
-        --topic ${TOPIC}
-        $FROM
+        --topic user_events
+        --from-beginning
         --property print.key=true
-        --property key.separator=" | ";
-      '
+        --property key.separator=" | "

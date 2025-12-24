@@ -1,9 +1,10 @@
 import argparse, json, sys, time, random, signal
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from kafka import KafkaProducer, KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 from kafka.errors import UnknownTopicOrPartitionError, KafkaError
+import events_pb2
 
 @dataclass
 class UserEvent:
@@ -29,20 +30,20 @@ def build_producer(bootstrap_server):
         bootstrap_servers=[bootstrap_server],
         retries=10,
         acks='all',
-        key_serializer=lambda k: str(k).encode("utf-8"),
-        value_serializer=lambda v: json.dumps(v).encode("utf-8")
+        key_serializer=lambda k: str(k).encode("utf-8")
     )
 
 def generate_event(user_max, item_max):
-    return UserEvent(
-        user_id=random.randint(1, user_max),
-        item_id=random.randint(1, item_max),
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        action=random.choices(ACTIONS, ACTIONS_WEIGHTS)[0]
-    )
+    event = events_pb2.UserEvent()
+    event.user_id = random.randint(1, user_max)
+    event.item_id = random.randint(1, item_max)
+    event.timestamp = datetime.now(timezone.utc).isoformat()
+    event.action = random.choices(ACTIONS, ACTIONS_WEIGHTS)[0]
+    return event
 
 def send_event(producer, topic, event):
-    producer.send(topic, key=event.user_id, value=event)
+    event_bytes = event.SerializeToString()
+    producer.send(topic, key=event.user_id, value=event_bytes)
 
 def main():
     parser = argparse.ArgumentParser(description="Generates user events to be ingested into Kafka")
@@ -65,6 +66,8 @@ def main():
     # 1) Ensure topic exist before ingesting
     admin = KafkaAdminClient(bootstrap_servers=[args.bootstrap_server])
     ensure_topic(admin, args.topic, args.partitions, args.replication_factor)
+    print("[main] Topic ensured. Waiting 5 seconds for metadata to sync...")
+    time.sleep(5)
 
     # 2) Build producer and ingest events
     producer = build_producer(args.bootstrap_server)

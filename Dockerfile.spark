@@ -1,0 +1,42 @@
+FROM ubuntu:22.04
+
+# 1. Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    openjdk-11-jdk \
+    python3-pip \
+    net-tools \
+    lsof \
+    nano \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Set Environment Variables
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV SPARK_HOME=/opt/spark
+ENV HADOOP_HOME=/opt/hadoop
+ENV PATH="${PATH}:${SPARK_HOME}/bin:${SPARK_HOME}/sbin:${HADOOP_HOME}/bin"
+ENV PYSPARK_PYTHON=python3
+
+# 3. Download and Install Spark 3.5.7 (Pre-built with Hadoop 3)
+# Note: We use the /opt directory for standard installations
+RUN wget https://archive.apache.org/dist/spark/spark-3.5.7/spark-3.5.7-bin-hadoop3.tgz && \
+    mkdir -p ${SPARK_HOME} && \
+    tar -xf spark-3.5.7-bin-hadoop3.tgz -C ${SPARK_HOME} --strip-components=1 && \
+    rm spark-3.5.7-bin-hadoop3.tgz
+
+# 4. Install Python libraries needed for ML and Spark
+# Added grpcio-tools so this image can also run your 'codegen' and 'producer'
+RUN pip3 install --no-cache-dir \
+    pandas==2.2.3 \
+    pyspark==3.5.7 \
+    kafka-python==2.0.2 \
+    grpcio-tools==1.66.1 \
+    protobuf==5.27.2 \
+    boto3==1.34.0
+
+WORKDIR /app
+
+# Default command is just a shell; we will override this in docker-compose
+CMD ["/bin/bash"]

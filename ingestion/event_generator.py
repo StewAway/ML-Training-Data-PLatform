@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from kafka import KafkaProducer, KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
-from kafka.errors import UnknownTopicOrPartitionError, KafkaError
+from kafka.errors import UnknownTopicOrPartitionError, KafkaError, TopicAlreadyExistsError
 import events_pb2
 
 @dataclass
@@ -19,8 +19,9 @@ ACTIONS_WEIGHTS = [0.80, 0.15, 0.05]
 def ensure_topic(admin, topic, partitions, replication_factor):
     try:
         admin.create_topics([NewTopic(name=topic, num_partitions=partitions, replication_factor=replication_factor)])
-    except UnknownTopicOrPartitionError:
-        print("[ensure_topic] topic already exists")
+        print(f"[ensure_topic] topic {topic} created successfully")
+    except TopicAlreadyExistsError:
+        print(f"[ensure_topic] topic '{topic}' already exists, skipping creation")
     except KafkaError as e:
         print(f"[ensure_topic] failed to create topic: {e}")
         sys.exit(1)

@@ -10,9 +10,19 @@ def decode_proto(events_bytes):
 
 decode_udf = udf(decode_proto, StringType())
 
-spark = SparkSession.builder \
-    .appName("KafkaToS3") \
-    .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000").getOrCreate()
+def get_spark_session():
+    return SparkSession.builder \
+        .appName("ML-Platform-Ingestion") \
+        .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
+        .config("spark.hadoop.fs.s3a.access.key", "admin") \
+        .config("spark.hadoop.fs.s3a.secret.key", "password123") \
+        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider") \
+        .getOrCreate()
+
+spark = get_spark_session()
 
 # Read from Kafka
 df = spark.readStream.format("kafka") \
@@ -36,3 +46,5 @@ query = processed_df.writeStream \
     .option("path", "s3a://training-lake/events/") \
     .option("checkpointLocation", "s3a://training-lake/checkpoints/") \
     .start()
+
+query.awaitTermination()

@@ -4,8 +4,14 @@ from pyspark.sql.types import StringType
 import events_pb2
 
 def decode_proto(events_bytes):
+    if events_bytes is None:
+        return ""
+        
+    binary_data = bytes(events_bytes) 
+    
     event = events_pb2.UserEvent()
-    event.ParseFromString(events_bytes)
+    event.ParseFromString(binary_data)
+    
     return f"{event.user_id},{event.item_id},{event.action},{event.timestamp}"
 
 decode_udf = udf(decode_proto, StringType())
@@ -24,24 +30,29 @@ def get_spark_session():
 
 spark = get_spark_session()
 
-# Read from Kafka
 df = spark.readStream.format("kafka") \
     .option("kafka.bootstrap.servers", "kafka:9092") \
-    .option("subscribe", "user_events").load()
+    .option("subscribePattern", "user_.*") \
+    .option("startingOffsets", "earliest") \
+    .option("failOnDataLoss", "false") \
+    .load()
 
-# Decode and Partition by Date
-processed_df = df.select(decode_udf(col("value")).alias("raw")) \
-    .selectExpr("split(raw, ',') as parts") \
-    .select(
-        col("parts")[0].alias("user_id"),
-        col("parts")[2].alias("action"),
-        col("parts")[3].alias("timestamp")
-    ) \
-    .withColumn("date", to_date(col("timestamp")))
 
-# Write to S3 (MinIO)
+processed_df = df.select(
+    decode_udf(col("value")).alias("raw"),
+    col("topic")
+) \
+.selectExpr("split(raw, ',') as parts", "topic") \
+.select(
+    col("parts")[0].alias("user_id"),
+    col("parts")[2].alias("action"),
+    col("parts")[3].alias("timestamp"),
+    col("topic") 
+) \
+.withColumn("date", to_date(col("timestamp")))
+
 query = processed_df.writeStream \
-    .partitionBy("date") \
+    .partitionBy("topic", "date") \
     .format("parquet") \
     .option("path", "s3a://training-lake/events/") \
     .option("checkpointLocation", "s3a://training-lake/checkpoints/") \

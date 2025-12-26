@@ -15,7 +15,9 @@ services:
   # 2) Kafka (KRaft Mode)
   # -------------------------
   kafka:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.kafka
     container_name: kafka
     ports:
       - "9092:9092"
@@ -44,7 +46,9 @@ services:
   # 3) Producer
   # -------------------------
   producer:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.kafka
     container_name: producer
     # It waits for Kafka to be healthy AND codegen to finish
     depends_on:
@@ -125,3 +129,73 @@ services:
       /usr/bin/mc mb myminio/training-lake;
       exit 0;
       "
+  # -------------------------
+  # 6) spark master for streaming data into s3
+  # -------------------------
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-master
+    volumes:
+      - ./ingestion:/app
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    # Use spark-class to keep the process in the foreground
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --ip 0.0.0.0
+
+  spark-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    volumes:
+      - ./ingestion:/app
+    environment:
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+    # Point the worker to the master container name
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+
+  spark-streaming-job:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-streaming-job
+    depends_on:
+      - spark-master
+      - kafka
+      - minio
+    volumes:
+      - ./ingestion:/app
+    # This keeps the container alive and submitting the job
+    command: >
+      spark-submit 
+      --master spark://spark-master:7077 
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.apache.hadoop:hadoop-aws:3.3.4 
+      --py-files /app/events_pb2.py 
+      /app/spark_streaming.py
+
+  # -------------------------
+  # 7) DDP training for topic
+  # -------------------------
+  training-master:
+    build: .
+    container_name: training-master
+    volumes:
+      - ./training:/app
+    working_dir: /app
+    command: python3 distributed_train.py --rank 0 --world-size 2
+
+  training-worker:
+    build: .
+    container_name: training-worker
+    depends_on:
+      - training-master
+    volumes:
+      - ./training:/app
+    working_dir: /app
+    command: python3 distributed_train.py --rank 1 --world-size 2

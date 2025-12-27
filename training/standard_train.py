@@ -6,15 +6,21 @@ import pandas as pd
 from io import BytesIO
 import boto3
 
-# --- Same Model Architecture ---
-class CTRModel(nn.Module):
+class CTRModel(torch.nn.Module):
     def __init__(self, feature_count):
         super(CTRModel, self).__init__()
-        self.linear = nn.Linear(feature_count, 1)
-        self.sigmoid = nn.Sigmoid()
+        # 2 -> 64 -> 64 -> 1
+        self.layer1 = torch.nn.Linear(feature_count, 64)
+        self.relu = torch.nn.ReLU()
+        self.layer2 = torch.nn.Linear(64, 64)
+        self.output = torch.nn.Linear(64, 1)
+        self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
-        return self.sigmoid(self.linear(x))
+        x = self.relu(self.layer1(x))
+        x = self.relu(self.layer2(x))
+        x = self.output(x)
+        return self.sigmoid(x)
 
 def load_data_from_s3():
     s3 = boto3.client('s3', endpoint_url='http://minio:9000',
@@ -48,7 +54,7 @@ def load_data_from_s3():
     df = pd.concat(dfs, ignore_index=True)
     print(f"[*] Successfully loaded {len(df)} total rows from {len(parquet_files)} files.")
 
-    # 4. Feature Engineering (Same as before)
+    # 4. Feature Engineering
     # Ensure columns exist, or fill them if some partitions are missing data
     if 'item_id' not in df.columns:
         df['item_id'] = "0"
@@ -88,7 +94,7 @@ def train():
     duration = end_time - start_time
     throughput = total_samples / duration
 
-    print(f"\n--- 🐢 Single Node Baseline Results ---")
+    print(f"\n--- Single Node Baseline Results ---")
     print(f"Total Time: {duration:.2f} seconds")
     print(f"Throughput: {throughput:.2f} samples/sec")
     print(f"---------------------------------------\n")

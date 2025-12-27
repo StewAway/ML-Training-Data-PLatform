@@ -8,7 +8,6 @@ services:
     volumes:
       - ./ingestion:/app
     working_dir: /app
-    # This generates the _pb2.py file onto your host machine folder
     command: python3 -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. events.proto
 
   # -------------------------
@@ -60,7 +59,6 @@ services:
     working_dir: /app
     environment:
       TOPIC: "user_events"
-    # ENTRYPOINT: This runs every time. It sets up the script and the fixed arguments.
     entrypoint: 
       - python3
       - event_generator.py
@@ -68,9 +66,6 @@ services:
       - kafka:9092
       - --topic
       - user_events
-    # COMMAND: These are the default arguments. 
-    # If you run "docker compose up", these are used.
-    # If you run "docker compose run ...", these are REPLACED by your custom args.
     command: 
       - --num-events
       - "10000"
@@ -91,7 +86,6 @@ services:
     volumes:
       - ./ingestion:/app
     working_dir: /app
-    # We will create consuming.py next
     command: python3 consuming.py --bootstrap-server kafka:9092 --topic user_events
 
   # -------------------------
@@ -155,7 +149,6 @@ services:
     ports:
       - "8080:8080"
       - "7077:7077"
-    # Use spark-class to keep the process in the foreground
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master --ip 0.0.0.0
 
   spark-worker:
@@ -170,7 +163,6 @@ services:
     environment:
       - SPARK_WORKER_CORES=2
       - SPARK_WORKER_MEMORY=2g
-    # Point the worker to the master container name
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
   spark-streaming-job:
@@ -184,7 +176,6 @@ services:
       - minio
     volumes:
       - ./ingestion:/app
-    # This keeps the container alive and submitting the job
     command: >
       spark-submit 
       --master spark://spark-master:7077 
@@ -201,7 +192,6 @@ services:
       context: .
       dockerfile: Dockerfile.torch
     container_name: training-node-0
-    # FIX: Define environment as a Map (no dashes) so we can merge it later
     environment: &ddp-env
       RANK: 0
       WORLD_SIZE: 4
@@ -258,7 +248,6 @@ services:
   # -------------------------
   # 8) Standard training (single node benchmark)
   # -------------------------
-  # --- DDP CLUSTER (4 Nodes) ---
   benchmark-single:
     build:
       context: .
@@ -268,5 +257,4 @@ services:
       - minio
     volumes:
       - ./training:/app
-    # Runs a specialized "Standard" script, not the distributed one
     command: python3 train_wrapper.py --mode single

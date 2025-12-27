@@ -57,6 +57,8 @@ query = processed_df.writeStream \
     .format("parquet") \
     .option("path", "s3a://training-lake/events/") \
     .option("checkpointLocation", "s3a://training-lake/checkpoints/") \
+    .outputMode("append") \
+    .trigger(processingTime='30 seconds') \
     .start()
 
 query.awaitTermination()

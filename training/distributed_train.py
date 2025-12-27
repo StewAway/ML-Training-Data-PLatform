@@ -13,11 +13,18 @@ import boto3
 class CTRModel(torch.nn.Module):
     def __init__(self, feature_count):
         super(CTRModel, self).__init__()
-        self.linear = torch.nn.Linear(feature_count, 1)
+        # 2 -> 64 -> 64 -> 1
+        self.layer1 = torch.nn.Linear(feature_count, 64)
+        self.relu = torch.nn.ReLU()
+        self.layer2 = torch.nn.Linear(64, 64)
+        self.output = torch.nn.Linear(64, 1)
         self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
-        return self.sigmoid(self.linear(x))
+        x = self.relu(self.layer1(x))
+        x = self.relu(self.layer2(x))
+        x = self.output(x)
+        return self.sigmoid(x)
 
 # --- 2. DDP Setup (The "Huddle") ---
 def setup(rank, world_size):
@@ -127,7 +134,6 @@ def train(rank, world_size):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    # These args are passed automatically by your 'train_wrapper.py'
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--world-size", type=int, default=1)
     args = parser.parse_args()

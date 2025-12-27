@@ -195,21 +195,23 @@ services:
   # -------------------------
   # 7) DDP training for topic by polling for data topic
   # -------------------------
+  # --- DDP CLUSTER (4 Nodes) ---
   training-node-0:
     build:
       context: .
       dockerfile: Dockerfile.torch
     container_name: training-node-0
+    # FIX: Define environment as a Map (no dashes) so we can merge it later
     environment: &ddp-env
-      - RANK=0
-      - WORLD_SIZE=4  # Scaling up to 4 nodes
-      - MASTER_ADDR=training-node-0
-      - MASTER_PORT=12355
-      - GLOO_SOCKET_IFNAME=eth0
-      - GLOO_SOCKET_FAMILY=AF_INET
+      RANK: 0
+      WORLD_SIZE: 4
+      MASTER_ADDR: training-node-0
+      MASTER_PORT: 12355
+      GLOO_SOCKET_IFNAME: eth0
+      GLOO_SOCKET_FAMILY: AF_INET
     volumes:
       - ./training:/app
-    command: python3 train_wrapper.py
+    command: python3 train_wrapper.py --mode distributed
 
   training-node-1:
     build:
@@ -219,11 +221,11 @@ services:
     depends_on:
       - training-node-0
     environment:
-      <<: *ddp-env
-      RANK: 1
+      <<: *ddp-env  # Merge the common variables
+      RANK: 1       # Override just the RANK
     volumes:
       - ./training:/app
-    command: python3 train_wrapper.py
+    command: python3 train_wrapper.py --mode distributed
 
   training-node-2:
     build:
@@ -237,7 +239,7 @@ services:
       RANK: 2
     volumes:
       - ./training:/app
-    command: python3 train_wrapper.py
+    command: python3 train_wrapper.py --mode distributed
 
   training-node-3:
     build:
@@ -251,9 +253,12 @@ services:
       RANK: 3
     volumes:
       - ./training:/app
-    command: python3 train_wrapper.py
+    command: python3 train_wrapper.py --mode distributed
 
-  # --- SINGLE NODE BENCHMARK (The Baseline) ---
+  # -------------------------
+  # 8) Standard training (single node benchmark)
+  # -------------------------
+  # --- DDP CLUSTER (4 Nodes) ---
   benchmark-single:
     build:
       context: .
@@ -264,4 +269,4 @@ services:
     volumes:
       - ./training:/app
     # Runs a specialized "Standard" script, not the distributed one
-    command: python3 standard_train.py
+    command: python3 train_wrapper.py --mode single

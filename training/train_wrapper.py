@@ -2,6 +2,7 @@ import time
 import os
 import subprocess
 import boto3
+import argparse
 
 def wait_for_data(bucket, key):
     s3 = boto3.client("s3", endpoint_url="http://minio:9000", 
@@ -19,6 +20,20 @@ def wait_for_data(bucket, key):
             time.sleep(5)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="distributed", choices=["distributed", "single"], help="Run in 'distributed' (DDP) or 'single' (standard) mode")
+    args = parser.parse_args()
     wait_for_data("training-lake", 'events/')
-
-    subprocess.run(["python3", "distributed_train.py", "--rank", os.environ['RANK'], "--world-size", os.environ['WORLD_SIZE']])
+    
+    if args.mode == "distributed":
+        # Launch DDP Script with Rank/World Size
+        print(">>> Launching Distributed Training...")
+        subprocess.run([
+            "python3", "distributed_train.py", 
+            "--rank", os.environ['RANK'], 
+            "--world-size", os.environ['WORLD_SIZE']
+        ])
+    else:
+        # Launch Standard Single-Process Script
+        print(">>> Launching Single-Node Benchmark...")
+        subprocess.run(["python3", "standard_train.py"])

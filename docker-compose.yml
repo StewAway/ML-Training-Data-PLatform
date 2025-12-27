@@ -50,7 +50,6 @@ services:
       context: .
       dockerfile: Dockerfile.kafka
     container_name: producer
-    # It waits for Kafka to be healthy AND codegen to finish
     depends_on:
       kafka:
         condition: service_healthy
@@ -60,9 +59,23 @@ services:
       - ./ingestion:/app
     working_dir: /app
     environment:
-      PRODUCER_ARGS: "--num-events 50 --sleep-time 0.1"
       TOPIC: "user_events"
-    command: python3 event_generator.py --bootstrap-server kafka:9092 --topic ${TOPIC} ${PRODUCER_ARGS}
+    # ENTRYPOINT: This runs every time. It sets up the script and the fixed arguments.
+    entrypoint: 
+      - python3
+      - event_generator.py
+      - --bootstrap-server
+      - kafka:9092
+      - --topic
+      - user_events
+    # COMMAND: These are the default arguments. 
+    # If you run "docker compose up", these are used.
+    # If you run "docker compose run ...", these are REPLACED by your custom args.
+    command: 
+      - --num-events
+      - "10000"
+      - --sleep-time
+      - "0.1"
 
   # -------------------------
   # 4) Consumer (Python-based for Protobuf)
@@ -180,22 +193,75 @@ services:
       /app/spark_streaming.py
 
   # -------------------------
-  # 7) DDP training for topic
+  # 7) DDP training for topic by polling for data topic
   # -------------------------
-  training-master:
-    build: .
-    container_name: training-master
+  training-node-0:
+    build:
+      context: .
+      dockerfile: Dockerfile.torch
+    container_name: training-node-0
+    environment: &ddp-env
+      - RANK=0
+      - WORLD_SIZE=4  # Scaling up to 4 nodes
+      - MASTER_ADDR=training-node-0
+      - MASTER_PORT=12355
+      - GLOO_SOCKET_IFNAME=eth0
+      - GLOO_SOCKET_FAMILY=AF_INET
     volumes:
       - ./training:/app
-    working_dir: /app
-    command: python3 distributed_train.py --rank 0 --world-size 2
+    command: python3 train_wrapper.py
 
-  training-worker:
-    build: .
-    container_name: training-worker
+  training-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.torch
+    container_name: training-node-1
     depends_on:
-      - training-master
+      - training-node-0
+    environment:
+      <<: *ddp-env
+      RANK: 1
     volumes:
       - ./training:/app
-    working_dir: /app
-    command: python3 distributed_train.py --rank 1 --world-size 2
+    command: python3 train_wrapper.py
+
+  training-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.torch
+    container_name: training-node-2
+    depends_on:
+      - training-node-0
+    environment:
+      <<: *ddp-env
+      RANK: 2
+    volumes:
+      - ./training:/app
+    command: python3 train_wrapper.py
+
+  training-node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.torch
+    container_name: training-node-3
+    depends_on:
+      - training-node-0
+    environment:
+      <<: *ddp-env
+      RANK: 3
+    volumes:
+      - ./training:/app
+    command: python3 train_wrapper.py
+
+  # --- SINGLE NODE BENCHMARK (The Baseline) ---
+  benchmark-single:
+    build:
+      context: .
+      dockerfile: Dockerfile.torch
+    container_name: benchmark-single
+    depends_on:
+      - minio
+    volumes:
+      - ./training:/app
+    # Runs a specialized "Standard" script, not the distributed one
+    command: python3 standard_train.py

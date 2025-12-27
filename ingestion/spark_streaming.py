@@ -45,6 +45,7 @@ processed_df = df.select(
 .selectExpr("split(raw, ',') as parts", "topic") \
 .select(
     col("parts")[0].alias("user_id"),
+    col("parts")[1].alias("item_id"),
     col("parts")[2].alias("action"),
     col("parts")[3].alias("timestamp"),
     col("topic") 

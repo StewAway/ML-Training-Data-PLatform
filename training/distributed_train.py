@@ -89,7 +89,7 @@ def train(rank, world_size):
     dataset = load_data_from_s3()
     
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank)
-    loader = DataLoader(dataset, batch_size=32, sampler=sampler)
+    loader = DataLoader(dataset, batch_size=128, sampler=sampler)
 
     model = CTRModel(feature_count=2)
     ddp_model = DDP(model)

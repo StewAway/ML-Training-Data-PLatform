@@ -199,6 +199,11 @@ services:
       MASTER_PORT: 12355
       GLOO_SOCKET_IFNAME: eth0
       GLOO_SOCKET_FAMILY: AF_INET
+      OMP_NUM_THREADS: 2  
+      MKL_NUM_THREADS: 2
+      OPENBLAS_NUM_THREADS: 1
+      VECLIB_MAXIMUM_THREADS: 1
+      NUMEXPR_NUM_THREADS: 1
     volumes:
       - ./training:/app
     command: python3 train_wrapper.py --mode distributed
